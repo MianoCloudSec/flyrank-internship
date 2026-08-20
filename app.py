@@ -1,7 +1,11 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-app = FastAPI()
+app = FastAPI(
+    title="Task API",
+    description="A small in-memory CRUD API for managing a to-do list.",
+    version="1.0",
+)
 
 tasks = [
     {"id": 1, "title": "Buy milk", "done": False},
@@ -21,6 +25,7 @@ class TaskUpdate(BaseModel):
 
 @app.get("/")
 def root():
+    """Describe the API and list its main resource."""
     return {
         "name": "Task API",
         "version": "1.0",
@@ -30,16 +35,19 @@ def root():
 
 @app.get("/health")
 def health():
+    """Liveness check — confirms the server is running."""
     return {"status": "ok"}
 
 
 @app.get("/tasks")
 def list_tasks():
+    """Return every task currently stored in memory."""
     return tasks
 
 
 @app.get("/tasks/{task_id}")
 def get_task(task_id: int):
+    """Return a single task by id, or 404 if it doesn't exist."""
     task = next((t for t in tasks if t["id"] == task_id), None)
 
     if task is None:
@@ -50,6 +58,7 @@ def get_task(task_id: int):
 
 @app.post("/tasks", status_code=201)
 def create_task(new_task: TaskCreate):
+    """Create a new task. Title is required and cannot be empty."""
     title = new_task.title.strip()
 
     if title == "":
@@ -65,6 +74,7 @@ def create_task(new_task: TaskCreate):
 
 @app.put("/tasks/{task_id}")
 def update_task(task_id: int, update: TaskUpdate):
+    """Replace a task's title and done status. 404 if the id is unknown."""
     task = next((t for t in tasks if t["id"] == task_id), None)
 
     if task is None:
@@ -83,6 +93,7 @@ def update_task(task_id: int, update: TaskUpdate):
 
 @app.delete("/tasks/{task_id}", status_code=204)
 def delete_task(task_id: int):
+    """Delete a task by id. 404 if the id is unknown."""
     task = next((t for t in tasks if t["id"] == task_id), None)
 
     if task is None:
