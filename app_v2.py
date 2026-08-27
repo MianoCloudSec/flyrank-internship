@@ -1,4 +1,5 @@
 import sqlite3
+from pydantic import BaseModel
 from fastapi import FastAPI, HTTPException
 
 app = FastAPI(
@@ -47,6 +48,9 @@ def init_db():
 
 init_db()
 
+class TaskCreate(BaseModel):
+    title: str = ""
+
 
 @app.get("/tasks")
 def list_tasks():
@@ -74,4 +78,28 @@ def get_task(task_id: int):
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
     return {"id": row["id"], "title": row["title"], "done": bool(row["done"])}
+
+@app.post("/tasks", status_code=201)
+def create_task(new_task: TaskCreate):
+    title = new_task.title.strip()
+
+    if title == "":
+        raise HTTPException(status_code=400, detail="title is required and cannot be empty")
+
+    connection = get_connection()
+    cursor = connection.cursor()
+    cursor.execute(
+        "INSERT INTO tasks (title, done) VALUES (?, ?)",
+        (title, False),
+    )
+    connection.commit()
+
+    new_id = cursor.lastrowid
+
+    cursor.execute("SELECT id, title, done FROM tasks WHERE id = ?", (new_id,))
+    row = cursor.fetchone()
+    connection.close()
+
+    return {"id": row["id"], "title": row["title"], "done": bool(row["done"])}
+
     return dict(row)
