@@ -145,25 +145,20 @@ Create → Read → Update → Delete
 
 ## 🧪 Example Request
 
-A real request I made against the running API:
+A real, unedited request straight from my terminal — headers and all, exactly as it printed:
 
-```text
 GET /tasks/1
-```
 
 Response:
 
-```json
 {
   "id": 1,
   "title": "Buy milk",
   "done": false
 }
-```
 
 The server returned:
 
-```text
 HTTP/1.1 200 OK
 ```
 
@@ -181,10 +176,11 @@ Example JSON:
 
 ```json
 {
-  "title": "Learn FastAPI",
-  "done": false
+  "title": "Learn FastAPI"
 }
 ```
+
+`done` isn't part of the request — my API always sets a new task's `done` to `false` on creation. You mark it complete afterward with a `PUT` request.
 
 ### Read tasks
 
@@ -239,7 +235,7 @@ Start server again
 Task is gone
 ```
 
-I tested this deliberately by creating a task, stopping the server and starting it again. The task disappeared and the API returned to the original three starter tasks.
+I tested this deliberately: I created a task, stopped the server with Ctrl+C, and started it again with the same command. The new task was gone, and `GET /tasks` returned only the original 3 starter tasks. That happens because the whole task list lives in RAM, not on disk — nothing was writing it anywhere permanent, so the fresh server process had nothing to read back.
 
 This isn't a bug in this stage of the project. It's demonstrating why persistence is necessary.
 
@@ -346,7 +342,7 @@ The goal isn't to jump straight into all of that. I want to understand each laye
 
 ---
 
-## 👨🏽‍💻 Why I Built This
+##  Why I Built This
 
 I'm using projects like this to move beyond just knowing what technologies are called and actually understand how they work by building with them.
 
@@ -355,3 +351,116 @@ This API is small, but the important part for me was building the whole thing my
 That's the approach I'm taking with my development work going forward:
 
 > **Build it. Test it. Break it. Understand it. Improve it.**
+
+---
+
+## 🗄️ Update: Now Backed by a Real Database (Assignment 2)
+
+The version above (`app.py`) stores tasks in a Python list — which means every
+restart wipes the data clean. This next version, `app_v2.py`, replaces that
+list with an actual SQLite database, so tasks now survive a restart. The API
+itself didn't change at all — same endpoints, same request bodies, same
+responses. Only what's underneath it changed.
+
+### Why SQLite
+
+I picked SQLite because it needs zero setup — no server to install, no
+service to run in the background, nothing to configure. The whole database
+is just one file sitting in my project folder. That made it the right tool
+for this stage: I wanted to learn how an API talks to a real database
+without also having to learn how to install and manage a full database
+server at the same time. SQLite is also built directly into Python through
+the `sqlite3` module, so I didn't even need to `pip install` anything extra
+to use it.
+
+### Where the database file lives
+
+The database is a single file called `tasks.db`, created automatically the
+first time `app_v2.py` runs, sitting right next to the code in the project
+folder:
+
+```text
+task-api/
+│
+├── app.py                     ← Assignment 1: in-memory version
+├── app_v2.py                  ← Assignment 2: SQLite-backed version
+├── tasks.db                   ← created automatically on first run
+├── README.md
+├── swagger-screenshot.png
+└── db-browser-screenshot.png
+```
+
+I'm not committing `tasks.db` itself to GitHub — it's runtime data, not
+source code, and anyone who clones this repo gets a fresh, empty version
+created automatically the first time they run the app.
+
+### How to start the project
+
+```bash
+git clone https://github.com/MianoCloudSec/flyrank-internship.git
+cd flyrank-internship
+python -m venv venv
+venv\Scripts\activate        # Windows
+# source venv/bin/activate   # Mac/Linux
+pip install fastapi uvicorn
+uvicorn app_v2:app --reload --port 8001
+```
+
+The first time this runs, `tasks.db` gets created automatically, the
+`tasks` table gets created if it doesn't exist yet, and 3 example tasks get
+inserted — but only that first time. Restart it as many times as you want
+after that, and those 3 example tasks won't duplicate, because the app
+checks if the table is empty before inserting anything.
+
+The API is now available at `http://localhost:8001`, and the same
+interactive docs are at `http://localhost:8001/docs`.
+
+### Seeing the database directly
+
+I used **DB Browser for SQLite** to open `tasks.db` and look at the raw
+data, completely separately from my API code:
+
+![DB Browser screenshot](db-browser-screenshot.png)
+
+> ⚠️ **Gotcha I ran into:** DB Browser doesn't save your changes to the
+> actual `.db` file the moment you run a query. It keeps them pending
+> until you click the **"Write Changes"** button. I ran an `UPDATE` and a
+> `DELETE`, checked my API right after, and the old data was still
+> showing — which confused me for a bit. The fix was clicking
+> **"Write Changes"** in DB Browser. The moment I did, my API immediately
+> reflected the change, no restart needed.
+>
+> This is the exact same idea as `connection.commit()` in my Python code
+> — nothing is actually saved to disk until you explicitly say so. DB
+> Browser just has a button for it instead of a line of code. It's a
+> good reminder that "I ran the query" and "I saved the change" aren't
+> the same thing, in SQL or in code.
+
+The interesting part of this stage was realizing that DB Browser and my API
+are both just looking at the exact same file. Anything I change in one, the
+other one sees too — but only after it's actually been committed to disk.
+
+### One real SQL query I ran
+
+```sql
+DELETE FROM tasks WHERE done = 1;
+```
+
+This deletes every task where `done` equals 1 (true). I ran this manually
+inside DB Browser, clicked "Write Changes," and then checked `GET /tasks`
+in my terminal right afterward — the deleted tasks were already gone from
+the API's response, with no code change and no server restart needed.
+That's what proved to me that the API and the database aren't two separate
+sources of truth — they're the same file, viewed two different ways.
+
+### What changed vs. what didn't
+
+| | Assignment 1 (`app.py`) | Assignment 2 (`app_v2.py`) |
+|---|---|---|
+| Storage | Python list in RAM | SQLite file (`tasks.db`) |
+| Survives restart? | ❌ No | ✅ Yes |
+| Endpoints | Same | Same |
+| Request/response shape | Same | Same |
+| How I find a task | `next()` search through a list | `SELECT ... WHERE id = ?` |
+| How I add a task | `.append()` to a list | `INSERT INTO tasks ...` |
+| How the id is generated | `max(ids) + 1` in Python | Auto-generated by SQLite (`INTEGER PRIMARY KEY`) |
