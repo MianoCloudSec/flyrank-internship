@@ -1,6 +1,6 @@
 import sqlite3
-from pydantic import BaseModel
 from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 
 app = FastAPI(
     title="Task API",
@@ -48,8 +48,14 @@ def init_db():
 
 init_db()
 
+
 class TaskCreate(BaseModel):
     title: str = ""
+
+
+class TaskUpdate(BaseModel):
+    title: str = ""
+    done: bool = False
 
 
 @app.get("/tasks")
@@ -79,6 +85,7 @@ def get_task(task_id: int):
 
     return {"id": row["id"], "title": row["title"], "done": bool(row["done"])}
 
+
 @app.post("/tasks", status_code=201)
 def create_task(new_task: TaskCreate):
     title = new_task.title.strip()
@@ -102,4 +109,52 @@ def create_task(new_task: TaskCreate):
 
     return {"id": row["id"], "title": row["title"], "done": bool(row["done"])}
 
-    return dict(row)
+
+@app.put("/tasks/{task_id}")
+def update_task(task_id: int, update: TaskUpdate):
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    cursor.execute("SELECT id FROM tasks WHERE id = ?", (task_id,))
+    existing = cursor.fetchone()
+
+    if existing is None:
+        connection.close()
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+    title = update.title.strip()
+
+    if title == "":
+        connection.close()
+        raise HTTPException(status_code=400, detail="title is required and cannot be empty")
+
+    cursor.execute(
+        "UPDATE tasks SET title = ?, done = ? WHERE id = ?",
+        (title, update.done, task_id),
+    )
+    connection.commit()
+
+    cursor.execute("SELECT id, title, done FROM tasks WHERE id = ?", (task_id,))
+    row = cursor.fetchone()
+    connection.close()
+
+    return {"id": row["id"], "title": row["title"], "done": bool(row["done"])}
+
+
+@app.delete("/tasks/{task_id}", status_code=204)
+def delete_task(task_id: int):
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    cursor.execute("SELECT id FROM tasks WHERE id = ?", (task_id,))
+    existing = cursor.fetchone()
+
+    if existing is None:
+        connection.close()
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+    cursor.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+    connection.commit()
+    connection.close()
+
+    return None
