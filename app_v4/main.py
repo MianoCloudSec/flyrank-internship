@@ -1,16 +1,8 @@
-import os
-from fastapi import FastAPI, HTTPException, Request
-from dotenv import load_dotenv
-from supabase import create_client, Client
+from fastapi import FastAPI, HTTPException, Depends
 
+from app_v4.client import supabase
 from app_v4.models import AuthCredentials
-
-load_dotenv()
-
-SUPABASE_URL = os.environ["SUPABASE_URL"]
-SUPABASE_KEY = os.environ["SUPABASE_KEY"]
-
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+from app_v4.dependencies import get_current_user
 
 app = FastAPI(
     title="Auth API",
@@ -56,33 +48,26 @@ def login(credentials: AuthCredentials):
     }
 
 
+@app.post("/auth/logout", status_code=204)
+def logout(current_user: dict = Depends(get_current_user)):
+    token = current_user["token"]
+
+    try:
+        supabase.auth.sign_out(token)
+    except Exception:
+        pass
+
+    return None
+
+
 @app.get("/public/info")
 def public_info():
     return {"message": "Welcome stranger! This info is public."}
 
 
 @app.get("/protected/profile")
-def protected_profile(request: Request):
-    auth_header = request.headers.get("Authorization")
-
-    if auth_header is None or not auth_header.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Access token required")
-
-    token = auth_header.removeprefix("Bearer ")
-
-    if token == "":
-        raise HTTPException(status_code=401, detail="Access token required")
-
-    try:
-        result = supabase.auth.get_user(token)
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-
-    if result is None or result.user is None:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-
-    user = result.user
-
+def protected_profile(current_user: dict = Depends(get_current_user)):
+    user = current_user["user"]
     return {
         "id": user.id,
         "email": user.email,
