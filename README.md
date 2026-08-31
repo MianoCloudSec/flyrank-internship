@@ -597,3 +597,147 @@ when the database container itself restarted too."
 | Survives container restart? | N/A | N/A | ✅ |
 | Code structure | One flat file | One flat file | Routes / service / repository |
 | Swapping storage requires | — | Rewriting the whole file | Changing 2 lines in `main.py` |
+
+---
+
+## 🔐 Update: Secure Auth with Supabase (Assignment 4)
+
+Every previous version of this API was wide open — anyone who knew the URL
+could read, create, update, or delete data. This version adds real
+authentication: user accounts, login sessions, and routes that only work
+if you can prove who you are.
+
+### The trust triangle
+
+This assignment introduced a pattern I hadn't built before — three parties
+involved in every authenticated request instead of just two:
+
+1. **Client → Supabase**: the client sends an email/password directly to
+   Supabase, which is my Identity Provider (IdP).
+2. **Supabase → Client**: if the credentials are valid, Supabase hands back
+   a JWT (JSON Web Token) — a signed, verifiable "pass."
+3. **Client → My server**: the client attaches that JWT to future requests,
+   inside an `Authorization: Bearer <token>` header.
+4. **My server → Supabase**: when a protected route is hit, my server asks
+   Supabase to verify the token is real, unexpired, and untampered.
+
+My server never sees or stores a single password. That job belongs
+entirely to Supabase — password hashing, breach protection, and session
+security are all handled by a dedicated identity provider instead of code
+I wrote myself.
+
+### Why I didn't build this myself
+
+Rolling your own authentication means correctly implementing password
+hashing, defending against credential-stuffing and brute-force attacks,
+and taking on real legal/reputational risk if it's ever done wrong. A
+service like Supabase has already solved that problem correctly, at scale
+— so instead of reinventing it, my server's only job is verifying a token
+Supabase already vouches for.
+
+### Architecture
+
+Built in `app_v4/`, following the same layered instinct as the Postgres
+assignment:
+
+- **`client.py`** — creates and exports a single shared Supabase client,
+  built from `SUPABASE_URL` and `SUPABASE_KEY` in `.env`.
+- **`models.py`** — the `AuthCredentials` shape (email + password) used by
+  signup and login.
+- **`dependencies.py`** — `get_current_user`, a reusable FastAPI
+  dependency. It extracts and verifies the bearer token, and is the
+  *only* place token-checking logic exists in the whole project.
+- **`main.py`** — the actual routes. Protected routes don't contain any
+  verification logic themselves — they just declare
+  `Depends(get_current_user)` and trust it to guard the door.
+
+### Endpoints
+
+| Method | Path                  | Requires Auth? | Description                          |
+|--------|-----------------------|:--------------:|---------------------------------------|
+| POST   | `/auth/signup`        | ❌              | Create a new user account             |
+| POST   | `/auth/login`         | ❌              | Authenticate and receive a JWT        |
+| POST   | `/auth/logout`        | ✅              | End the current session               |
+| GET    | `/public/info`        | ❌              | Public, unauthenticated data          |
+| GET    | `/protected/profile`  | ✅              | Read the logged-in user's own profile |
+
+### How to run it
+
+```bash
+git clone https://github.com/MianoCloudSec/flyrank-internship.git
+cd flyrank-internship
+python -m venv venv
+venv\Scripts\activate        # Windows
+# source venv/bin/activate   # Mac/Linux
+pip install fastapi uvicorn supabase python-dotenv
+```
+
+Then add your own Supabase project's values to `.env` (see
+`.env.example` for the required keys):
+SUPABASE_URL=your_project_url
+SUPABASE_KEY=your_anon_key
+
+
+Start the server:
+
+```bash
+uvicorn app_v4.main:app --reload --port 8003
+```
+
+Docs and the Authorize button live at `http://localhost:8003/docs`.
+
+### Testing the full flow
+
+```bash
+# 1. Sign up
+curl -i -X POST http://localhost:8003/auth/signup \
+  -H "Content-Type: application/json" \
+  -d '{"email":"you@example.com","password":"yourpassword"}'
+
+# 2. Log in, copy the access_token from the response
+curl -i -X POST http://localhost:8003/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"you@example.com","password":"yourpassword"}'
+
+# 3. Use the token to access a protected route
+curl -i http://localhost:8003/protected/profile \
+  -H "Authorization: Bearer PASTE_YOUR_TOKEN_HERE"
+```
+
+Changing even one character of the token causes the last request to
+correctly return `401 Invalid or expired token`.
+
+### A real bug I hit: Supabase's free-tier email rate limit
+
+Testing signup repeatedly (as I iterated on the code) burned through
+Supabase's default email-sending quota fast, and I started getting
+`"email rate limit exceeded"` errors that had nothing to do with my code.
+
+**The fix**: I configured a custom SMTP provider (Resend, free tier) under
+Supabase's Auth SMTP settings, using Resend's built-in test sender
+(`onboarding@resend.dev`). That removes Supabase's default cap entirely.
+One limitation worth knowing: that shared test sender only delivers to the
+email address the Resend account itself was created with — fine for a
+one-account practice project like this, not something you'd use in
+production.
+
+### Swagger UI with Bearer Auth
+
+Configuring `HTTPBearer` as a FastAPI security scheme makes `/docs` show a
+padlock next to every protected route, plus a green "Authorize" button
+that lets you paste a token once and test every protected endpoint
+directly from the browser — no curl needed.
+
+![Swagger UI showing protected routes with lock icons](swagger4.png)
+
+![Swagger UI after authorizing and testing a protected route](swagger2.png)
+
+### What changed vs. every version before it
+
+| | Assignments 1–3 | Assignment 4 |
+|---|---|---|
+| Who can access the API | Anyone with the URL | Only users who can prove their identity |
+| Passwords | N/A | Never touched by my code — handled entirely by Supabase |
+| Protecting a route | No concept of this | `Depends(get_current_user)` |
+| Adding auth to a new route | N/A | One line: add the same dependency |
+| Swagger UI | Open, no auth | Padlock icons + Authorize button for protected routes |
