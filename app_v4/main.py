@@ -1,7 +1,9 @@
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 from dotenv import load_dotenv
 from supabase import create_client, Client
+
+from app_v4.models import AuthCredentials
 
 load_dotenv()
 
@@ -17,3 +19,58 @@ app = FastAPI(
 )
 
 print("Server running and connected to Supabase")
+
+
+@app.post("/auth/signup", status_code=201)
+def signup(credentials: AuthCredentials):
+    if credentials.email == "" or credentials.password == "":
+        raise HTTPException(status_code=400, detail="email and password are required")
+
+    try:
+        result = supabase.auth.sign_up({
+            "email": credentials.email,
+            "password": credentials.password,
+        })
+    except Exception as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+    return {"user": result.user}
+
+
+@app.post("/auth/login")
+def login(credentials: AuthCredentials):
+    if credentials.email == "" or credentials.password == "":
+        raise HTTPException(status_code=400, detail="email and password are required")
+
+    try:
+        result = supabase.auth.sign_in_with_password({
+            "email": credentials.email,
+            "password": credentials.password,
+        })
+    except Exception as error:
+        raise HTTPException(status_code=401, detail="Invalid login credentials")
+
+    return {
+        "access_token": result.session.access_token,
+        "refresh_token": result.session.refresh_token,
+    }
+
+
+@app.get("/public/info")
+def public_info():
+    return {"message": "Welcome stranger! This info is public."}
+
+
+@app.get("/protected/profile")
+def protected_profile(request: Request):
+    auth_header = request.headers.get("Authorization")
+
+    if auth_header is None or not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Access token required")
+
+    token = auth_header.removeprefix("Bearer ")
+
+    if token == "":
+        raise HTTPException(status_code=401, detail="Access token required")
+
+    return {"message": "Token received, not yet verified", "token_preview": token[:10] + "..."}
