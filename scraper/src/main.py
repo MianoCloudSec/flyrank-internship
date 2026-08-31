@@ -1,12 +1,18 @@
 import os
+import re
 import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin
 
-CATALOGUE_URL = "https://books.toscrape.com/catalogue/page-1.html"
-CACHE_PATH = "cache/catalogue-page-1.html"
+BASE_CATALOGUE_URL = "https://books.toscrape.com/catalogue/page-{}.html"
+CACHE_DIR = "cache"
 HEADERS = {
     "User-Agent": "FlyRankInternshipA9/1.0 (+https://github.com/MianoCloudSec/flyrank-internship)"
 }
 TIMEOUT_SECONDS = 10
+NUM_PAGES = 3
+
+RATING_WORDS = {"One": 1, "Two": 2, "Three": 3, "Four": 4, "Five": 5}
 
 
 def fetch_page(url, cache_path):
@@ -21,12 +27,67 @@ def fetch_page(url, cache_path):
     if response.status_code != 200:
         raise Exception(f"Fetch failed: status code {response.status_code}")
 
+    response.encoding = "utf-8"
+
     with open(cache_path, "w", encoding="utf-8") as file:
         file.write(response.text)
 
     return response.text
 
+def fetch_all_catalogue_pages():
+    pages = []
+    for page_number in range(1, NUM_PAGES + 1):
+        url = BASE_CATALOGUE_URL.format(page_number)
+        cache_path = os.path.join(CACHE_DIR, f"catalogue-page-{page_number}.html")
+        html = fetch_page(url, cache_path)
+        pages.append({"url": url, "html": html})
+    return pages
+
+
+def extract_books(page_url, html):
+    soup = BeautifulSoup(html, "html.parser")
+    books = []
+
+    for article in soup.select("article.product_pod"):
+        title_tag = article.select_one("h3 a")
+        title = title_tag["title"] if title_tag else None
+
+        relative_link = title_tag["href"] if title_tag else None
+        absolute_link = urljoin(page_url, relative_link) if relative_link else None
+
+        price_tag = article.select_one("p.price_color")
+        price_text = price_tag.get_text(strip=True) if price_tag else None
+
+        availability_tag = article.select_one("p.instock.availability")
+        availability_text = availability_tag.get_text(strip=True) if availability_tag else None
+
+        rating_tag = article.select_one("p.star-rating")
+        rating_word = None
+        if rating_tag:
+            classes = rating_tag.get("class", [])
+            for word in RATING_WORDS:
+                if word in classes:
+                    rating_word = word
+                    break
+
+        books.append({
+            "title": title,
+            "price_text": price_text,
+            "availability_text": availability_text,
+            "rating_word": rating_word,
+            "url": absolute_link,
+        })
+
+    return books
+
 
 if __name__ == "__main__":
-    html = fetch_page(CATALOGUE_URL, CACHE_PATH)
-    print(f"Got {len(html)} characters of HTML")
+    pages = fetch_all_catalogue_pages()
+
+    all_books = []
+    for page in pages:
+        books = extract_books(page["url"], page["html"])
+        all_books.extend(books)
+
+    print(f"Extracted {len(all_books)} books")
+    print(all_books[0])
