@@ -136,6 +136,24 @@ def save_books(valid_books, output_path="books.json"):
     print(f"Saved {len(books_as_dicts)} books to {output_path}")
 
 
+def print_report(pages, valid_books, invalid_books):
+    print("\n--- Run Report ---")
+    print(f"Pages fetched: {len(pages)}")
+    print(f"Books extracted: {len(valid_books) + len(invalid_books)}")
+    print(f"Valid books: {len(valid_books)}")
+    print(f"Invalid books: {len(invalid_books)}")
+
+    if valid_books:
+        prices = [book.price for book in valid_books]
+        print(f"Price range: £{min(prices):.2f} - £{max(prices):.2f}")
+        print(f"Average price: £{sum(prices) / len(prices):.2f}")
+
+    if invalid_books:
+        print("\nInvalid records:")
+        for invalid in invalid_books:
+            print(f"  - {invalid['data'].get('title', 'unknown title')}: {invalid['error']}")
+
+
 if __name__ == "__main__":
     pages = fetch_all_catalogue_pages()
 
@@ -148,8 +166,6 @@ if __name__ == "__main__":
 
     valid_books, invalid_books = validate_books(all_normalized)
 
-    print(f"Valid: {len(valid_books)}, Invalid: {len(invalid_books)}")
-    if invalid_books:
-        print("First invalid record:", invalid_books[0])
-
     save_books(valid_books)
+
+    print_report(pages, valid_books, invalid_books)
