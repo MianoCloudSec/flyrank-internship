@@ -34,6 +34,7 @@ def fetch_page(url, cache_path):
 
     return response.text
 
+
 def fetch_all_catalogue_pages():
     pages = []
     for page_number in range(1, NUM_PAGES + 1):
@@ -81,13 +82,36 @@ def extract_books(page_url, html):
     return books
 
 
+def normalize_book(raw_book):
+    price = None
+    if raw_book["price_text"]:
+        price_digits = re.sub(r"[^\d.]", "", raw_book["price_text"])
+        price = float(price_digits) if price_digits else None
+
+    in_stock = None
+    if raw_book["availability_text"]:
+        in_stock = "in stock" in raw_book["availability_text"].lower()
+
+    rating = RATING_WORDS.get(raw_book["rating_word"])
+
+    return {
+        "title": raw_book["title"],
+        "price": price,
+        "in_stock": in_stock,
+        "rating": rating,
+        "url": raw_book["url"],
+    }
+
+
 if __name__ == "__main__":
     pages = fetch_all_catalogue_pages()
 
-    all_books = []
+    all_raw_books = []
     for page in pages:
-        books = extract_books(page["url"], page["html"])
-        all_books.extend(books)
+        raw_books = extract_books(page["url"], page["html"])
+        all_raw_books.extend(raw_books)
 
-    print(f"Extracted {len(all_books)} books")
+    all_books = [normalize_book(raw_book) for raw_book in all_raw_books]
+
+    print(f"Extracted and normalized {len(all_books)} books")
     print(all_books[0])
