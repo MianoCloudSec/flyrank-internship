@@ -1,5 +1,6 @@
 import os
 import re
+import json
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
@@ -126,6 +127,15 @@ def validate_books(normalized_books):
     return valid_books, invalid_books
 
 
+def save_books(valid_books, output_path="books.json"):
+    books_as_dicts = [book.model_dump() for book in valid_books]
+
+    with open(output_path, "w", encoding="utf-8") as file:
+        json.dump(books_as_dicts, file, indent=2, ensure_ascii=False)
+
+    print(f"Saved {len(books_as_dicts)} books to {output_path}")
+
+
 if __name__ == "__main__":
     pages = fetch_all_catalogue_pages()
 
@@ -141,3 +151,5 @@ if __name__ == "__main__":
     print(f"Valid: {len(valid_books)}, Invalid: {len(invalid_books)}")
     if invalid_books:
         print("First invalid record:", invalid_books[0])
+
+    save_books(valid_books)
