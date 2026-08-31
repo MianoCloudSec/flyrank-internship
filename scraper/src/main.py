@@ -3,6 +3,7 @@ import re
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
+from pydantic import BaseModel, ValidationError
 
 BASE_CATALOGUE_URL = "https://books.toscrape.com/catalogue/page-{}.html"
 CACHE_DIR = "cache"
@@ -13,6 +14,14 @@ TIMEOUT_SECONDS = 10
 NUM_PAGES = 3
 
 RATING_WORDS = {"One": 1, "Two": 2, "Three": 3, "Four": 4, "Five": 5}
+
+
+class Book(BaseModel):
+    title: str
+    price: float
+    in_stock: bool
+    rating: int
+    url: str
 
 
 def fetch_page(url, cache_path):
@@ -103,6 +112,20 @@ def normalize_book(raw_book):
     }
 
 
+def validate_books(normalized_books):
+    valid_books = []
+    invalid_books = []
+
+    for book_data in normalized_books:
+        try:
+            book = Book(**book_data)
+            valid_books.append(book)
+        except ValidationError as error:
+            invalid_books.append({"data": book_data, "error": str(error)})
+
+    return valid_books, invalid_books
+
+
 if __name__ == "__main__":
     pages = fetch_all_catalogue_pages()
 
@@ -111,7 +134,10 @@ if __name__ == "__main__":
         raw_books = extract_books(page["url"], page["html"])
         all_raw_books.extend(raw_books)
 
-    all_books = [normalize_book(raw_book) for raw_book in all_raw_books]
+    all_normalized = [normalize_book(raw_book) for raw_book in all_raw_books]
 
-    print(f"Extracted and normalized {len(all_books)} books")
-    print(all_books[0])
+    valid_books, invalid_books = validate_books(all_normalized)
+
+    print(f"Valid: {len(valid_books)}, Invalid: {len(invalid_books)}")
+    if invalid_books:
+        print("First invalid record:", invalid_books[0])
